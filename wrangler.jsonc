@@ -1,0 +1,30 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "ech-doserver", // 修改为你的项目名称
+	"main": "src/index.js",
+	"compatibility_date": "2025-11-09",
+	"migrations": [
+		{
+			"new_sqlite_classes": [
+				"EchServer"
+			],
+			"tag": "v1"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "EchServer",
+				"name": "ECH_SERVER"
+			}
+		]
+	},
+	"observability": {
+		"enabled": false
+	},
+	"vars": {
+		// "TOKEN": "52e0ec49-06c9-44ff-8ed1-940def621642", // 客户端上要用的身份令牌(token)
+		"CF_FALLBACK_IPS": "84.235.245.18:34501", // PROXYIP
+		// ... 查看源码，可以添加更多的环境变量
+	}
+}
