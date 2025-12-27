@@ -1,0 +1,13 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "ech-worker",
+	"main": "_worker.js",
+	"compatibility_date": "2025-11-09",
+	"observability": {
+		"enabled": false
+	},
+	"vars": {
+		"TOKEN": "c32a1902-227b-45c2-a3e5-5bcbfc30349c",
+		// "FALLBACK_IPS": "bpb.yousef.isegaro.com,ProxyIP.CMLiussss.net,43.132.244.52:21415"
+	}
+}
