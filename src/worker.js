@@ -252,7 +252,9 @@ export default {
 			return new Response(pathname === '/' ? "hello world!" : "Not found!", { status: 200 });
 		}
 
-		if (CONFIG.TOKEN && request.headers.get('Sec-WebSocket-Protocol') !== CONFIG.TOKEN) {
+		let token = env.TOKEN || CONFIG.TOKEN;
+
+		if (token && request.headers.get('Sec-WebSocket-Protocol') !== token) {
 			return new Response('Unauthorized', { status: 401 });
 		}
 
