@@ -1,0 +1,51 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "ECH-Workers Client",
+	"version": "0.1.0",
+	"identifier": "com.ech-workers.client",
+	"build": {
+		"frontendDist": "../src"
+	},
+	"app": {
+		"withGlobalTauri": true,
+		"windows": [
+			{
+				"title": "ECH-Workers Client",
+				"label": "main",
+				"width": 700,
+				"height": 650,
+				"resizable": false,
+				"center": true,
+				"visible": true,
+				"maximizable": false,
+				"minimizable": true,
+				"closable": true,
+				"skipTaskbar": false,
+				"decorations": true,
+				"transparent": false,
+				"alwaysOnTop": false,
+				"fullscreen": false
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": "all",
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		],
+		"windows": {
+			"nsis": {
+				"displayLanguageSelector": false
+			}
+		}
+	},
+	"plugins": {}
+}

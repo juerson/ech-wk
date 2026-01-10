@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>ECH-Workers 客户端</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+	<div id="toast" class="message-toast"></div>
+
+	<div class="container">
+		<div class="header">
+			<h1>ECH-Workers Client</h1>
+			<div class="status">
+				<div class="status-indicator" id="statusIndicator"></div>
+				<span id="statusText">未连接</span>
+			</div>
+		</div>
+
+		<!-- 服务器管理 -->
+		<div class="server-management">
+			<div class="section-title">🌐 服务器管理</div>
+			<div class="server-controls">
+				<select id="serverSelect" class="server-select">
+					<option value="">选择服务器配置...</option>
+				</select>
+				<div class="btn-group">
+					<button class="btn-mgr btn-blue" id="addServerBtn">新增配置</button>
+					<button class="btn-mgr btn-green" id="saveServerBtn">保存配置</button>
+					<button class="btn-mgr btn-red" id="deleteServerBtn">删除配置</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- 代理参数配置 -->
+		<div class="config-grid">
+			<div class="section-title" style="grid-column: span 2;">🔧 代理参数配置</div>
+
+			<div class="form-group full-width">
+				<label>服务器地址</label>
+				<input type="password" id="serverAddr" placeholder="example.workers.dev:443" class="password-input">
+			</div>
+
+			<div class="form-group">
+				<label>身份令牌</label>
+				<input type="password" id="token" placeholder="Token" class="password-input">
+			</div>
+			<div class="form-group">
+				<label>优选地址</label>
+				<input type="password" id="serverIp" placeholder="1.2.3.4" class="password-input">
+			</div>
+
+			<div class="form-group">
+				<label>ECH 域名</label>
+				<input type="text" id="echDomain" value="cloudflare-ech.com">
+			</div>
+			<div class="form-group">
+				<label>DOH 地址</label>
+				<input type="text" id="dnsServer" value="dns.alidns.com/dns-query">
+			</div>
+
+			<div class="form-group">
+				<label>监听地址</label>
+				<input type="text" id="listenAddr" value="127.0.0.1:30000">
+			</div>
+			<div class="form-group">
+				<label>路由模式</label>
+				<select id="routingMode">
+					<option value="global">全局代理</option>
+					<option value="bypass_cn">绕过中国</option>
+					<option value="none">不改变代理</option>
+				</select>
+			</div>
+		</div>
+
+		<!-- 控制栏 -->
+		<div class="control-bar">
+			<!-- 左侧：垂直排列的开关 -->
+			<div class="switches-col">
+				<div class="switch-item">
+					<span>系统代理</span>
+					<label class="switch">
+						<input type="checkbox" id="systemProxy">
+						<span class="slider"></span>
+					</label>
+				</div>
+				<div class="switch-item">
+					<span>开机启动</span>
+					<label class="switch">
+						<input type="checkbox" id="autostart">
+						<span class="slider"></span>
+					</label>
+				</div>
+			</div>
+
+			<!-- 右侧：较小的控制按钮 -->
+			<div class="actions-row">
+				<button class="btn-ctrl btn-start" id="startBtn">启动代理</button>
+				<button class="btn-ctrl btn-stop" id="stopBtn" disabled>停止代理</button>
+			</div>
+		</div>
+
+		<!-- 日志输出 -->
+		<div class="output-section">
+			<div class="output-header">
+				<span>📋 运行日志</span>
+				<span id="clearLogs" style="color:#667eea; cursor:pointer; font-size:12px;">清空日志</span>
+			</div>
+			<div class="output-container" id="output">
+				<div>等待指令...</div>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		const { invoke } = window.__TAURI__.core;
+		let isRunning = false;
+		let servers = [];
+		let currentServerId = null;
+
+		const dom = {
+			startBtn: document.getElementById('startBtn'),
+			stopBtn: document.getElementById('stopBtn'),
+			statusInd: document.getElementById('statusIndicator'),
+			statusTxt: document.getElementById('statusText'),
+			output: document.getElementById('output'),
+			toast: document.getElementById('toast'),
+			serverSelect: document.getElementById('serverSelect')
+		};
+
+		function showToast(msg, isError = false) {
+			dom.toast.textContent = msg;
+			dom.toast.style.display = 'block';
+			dom.toast.style.background = isError ? '#f8d7da' : '#d4edda';
+			dom.toast.style.color = isError ? '#721c24' : '#155724';
+			setTimeout(() => dom.toast.style.display = 'none', 2000);
+		}
+
+		function updateUI(running) {
+			isRunning = running;
+			dom.startBtn.disabled = running;
+			dom.stopBtn.disabled = !running;
+			dom.statusTxt.textContent = running ? '代理运行中' : '未连接';
+
+			// 禁用/启用所有配置输入框
+			const configInputs = document.querySelectorAll('.config-grid input, .config-grid select');
+			configInputs.forEach(input => {
+				input.disabled = running;
+			});
+
+			// 禁用/启用服务器管理按钮
+			const serverButtons = document.querySelectorAll('#addServerBtn, #saveServerBtn, #deleteServerBtn');
+			serverButtons.forEach(button => {
+				button.disabled = running;
+			});
+
+			// 禁用/启用服务器选择下拉框
+			const serverSelect = document.getElementById('serverSelect');
+			if (serverSelect) {
+				serverSelect.disabled = running;
+			}
+		}
+
+		function getCurrentFormData() {
+			return {
+				server_addr: document.getElementById('serverAddr').value,
+				listen_addr: document.getElementById('listenAddr').value,
+				server_ip: document.getElementById('serverIp').value,
+				token: document.getElementById('token').value,
+				dns_server: document.getElementById('dnsServer').value,
+				ech_domain: document.getElementById('echDomain').value,
+				routing_mode: document.getElementById('routingMode').value
+			};
+		}
+
+		function loadServerToForm(server) {
+			document.getElementById('serverAddr').value = server.server || '';
+			document.getElementById('listenAddr').value = server.listen || '127.0.0.1:30000';
+			document.getElementById('serverIp').value = server.ip || '';
+			document.getElementById('token').value = server.token || '';
+			document.getElementById('dnsServer').value = server.dns || 'dns.alidns.com/dns-query';
+			document.getElementById('echDomain').value = server.ech || 'cloudflare-ech.com';
+			document.getElementById('routingMode').value = server.routing_mode || 'global';
+		}
+
+		async function loadServers() {
+			try {
+				servers = await invoke('get_servers');
+				updateServerSelect();
+
+				// 加载当前选中的服务器
+				const currentServer = await invoke('get_current_server');
+				if (currentServer) {
+					currentServerId = currentServer.id;
+					dom.serverSelect.value = currentServer.id;
+					loadServerToForm(currentServer);
+				}
+			} catch (e) {
+				showToast('加载服务器配置失败: ' + e, true);
+			}
+		}
+
+		function updateServerSelect() {
+			dom.serverSelect.innerHTML = '<option value="">选择服务器配置...</option>';
+			servers.forEach(s => {
+				const opt = document.createElement('option');
+				opt.value = s.id; opt.textContent = s.name;
+				dom.serverSelect.appendChild(opt);
+			});
+		}
+
+		dom.serverSelect.onchange = async () => {
+			const id = dom.serverSelect.value;
+			if (id) {
+				currentServerId = id;
+				try {
+					await invoke('set_current_server', { serverId: id });
+					const s = servers.find(x => x.id === id);
+					if (s) loadServerToForm(s);
+				} catch (e) {
+					showToast('设置当前服务器失败: ' + e, true);
+				}
+			}
+		};
+
+		document.getElementById('addServerBtn').onclick = async () => {
+			const name = prompt('配置名称:');
+			if (!name) return;
+
+			const formData = getCurrentFormData();
+			const newServer = {
+				id: Date.now().toString(),
+				name: name,
+				server: formData.server_addr,
+				listen: formData.listen_addr,
+				token: formData.token,
+				ip: formData.server_ip,
+				dns: formData.dns_server,
+				ech: formData.ech_domain,
+				routing_mode: formData.routing_mode
+			};
+
+			try {
+				await invoke('upsert_server', { server: newServer });
+				await loadServers(); // 重新加载
+				dom.serverSelect.value = newServer.id;
+				currentServerId = newServer.id;
+				showToast('已新增');
+			} catch (e) {
+				showToast('新增服务器失败: ' + e, true);
+			}
+		};
+
+		document.getElementById('saveServerBtn').onclick = async () => {
+			if (!currentServerId) return showToast('请先选择配置', true);
+
+			const formData = getCurrentFormData();
+			const updatedServer = {
+				id: currentServerId,
+				name: servers.find(x => x.id === currentServerId)?.name || '未知服务器',
+				server: formData.server_addr,
+				listen: formData.listen_addr,
+				token: formData.token,
+				ip: formData.server_ip,
+				dns: formData.dns_server,
+				ech: formData.ech_domain,
+				routing_mode: formData.routing_mode
+			};
+
+			try {
+				await invoke('upsert_server', { server: updatedServer });
+				await loadServers(); // 重新加载
+				showToast('已保存');
+			} catch (e) {
+				showToast('保存服务器失败: ' + e, true);
+			}
+		};
+
+		document.getElementById('deleteServerBtn').onclick = async () => {
+			if (!currentServerId || !confirm('确认删除？')) return;
+
+			try {
+				await invoke('delete_server', { serverId: currentServerId });
+				await loadServers(); // 重新加载
+				loadServerToForm({});
+				showToast('已删除');
+			} catch (e) { showToast(e, true); }
+		};
+
+		document.getElementById('clearLogs').onclick = async () => {
+			try {
+				await invoke('clear_proxy_output');
+				dom.output.innerHTML = '<div></div>';
+				lastOutputLength = 0; // 重置计数器
+				showToast('日志已清空');
+			} catch (e) {
+				showToast('清空日志失败: ' + e, true);
+			}
+		};
+
+		document.getElementById('systemProxy').onchange = async (e) => {
+			try {
+				await invoke('set_system_proxy', { enabled: e.target.checked });
+				showToast(e.target.checked ? '系统代理已启用' : '系统代理已禁用');
+			} catch (error) {
+				showToast('设置系统代理失败: ' + error, true);
+				e.target.checked = !e.target.checked; // 恢复状态
+			}
+		};
+
+		document.getElementById('autostart').onchange = async (e) => {
+			try {
+				await invoke('set_autostart', { enabled: e.target.checked });
+				showToast(e.target.checked ? '开机启动已启用' : '开机启动已禁用');
+			} catch (error) {
+				showToast('设置开机启动失败: ' + error, true);
+				e.target.checked = !e.target.checked; // 恢复状态
+			}
+		};
+
+		function showPasswordContent(input) {
+			if (input.value) {
+				input.type = 'text';
+			}
+		}
+
+		function hidePasswordContent(input) {
+			if (input.value) {
+				input.type = 'password';
+			}
+		}
+
+		// 初始化所有password输入框的输入状态显示功能
+		function initPasswordInputs() {
+			const passwordInputs = document.querySelectorAll('input[type="password"]');
+			passwordInputs.forEach(input => {
+				input.addEventListener('focus', () => showPasswordContent(input));
+				input.addEventListener('blur', () => hidePasswordContent(input));
+			});
+		}
+
+		async function loadSystemSettings() {
+			try {
+				// 获取实际的系统状态
+				const proxyStatus = await invoke('get_system_proxy_status');
+				document.getElementById('systemProxy').checked = proxyStatus;
+
+				const autostartStatus = await invoke('get_autostart_status');
+				document.getElementById('autostart').checked = autostartStatus;
+
+				// 获取最后保存的状态（用于调试和日志）
+				const lastState = await invoke('get_last_state');
+				console.log('Last state loaded:', lastState);
+
+				// 检查实际的代理运行状态
+				const actualProxyStatus = await invoke('get_proxy_status');
+				console.log('Actual proxy status:', actualProxyStatus);
+
+				// 如果发现外部进程在运行，同步UI状态
+				if (actualProxyStatus.is_running) {
+					console.log('Detected running proxy process, updating UI');
+					updateUI(true);
+
+					// 如果系统代理状态不一致，也同步
+					if (actualProxyStatus.system_proxy_enabled !== proxyStatus) {
+						document.getElementById('systemProxy').checked = actualProxyStatus.system_proxy_enabled;
+					}
+
+					// 如果是外部进程运行但不是我们管理的，显示提示
+					if (actualProxyStatus.is_external_running && !actualProxyStatus.is_managed_running) {
+						console.log('External proxy process detected but not managed by this app');
+						showToast('检测到外部代理进程正在运行', false);
+					}
+				}
+
+				showToast('系统设置已加载');
+			} catch (e) {
+				showToast('加载系统设置失败: ' + e, true);
+			}
+		}
+
+		async function pollStartupStatus(timeoutMs = 15000) {
+			const startedAt = Date.now();
+			const timer = setInterval(async () => {
+				try {
+					const status = await invoke('get_proxy_status');
+					if (status.is_running) {
+						updateUI(true);
+						clearInterval(timer);
+					} else if (Date.now() - startedAt > timeoutMs) {
+						clearInterval(timer);
+					}
+				} catch (_) {
+					clearInterval(timer);
+				}
+			}, 1000);
+		}
+
+		document.addEventListener('DOMContentLoaded', async () => {
+			initPasswordInputs();
+			await loadServers();
+			await loadSystemSettings();
+			await pollStartupStatus();
+
+			setInterval(async () => {
+				try {
+					const status = await invoke('get_proxy_status');
+					const running = status.is_running;
+					if (running !== isRunning) {
+						updateUI(running);
+					}
+					const sysEnabled = await invoke('get_system_proxy_status');
+					const checkbox = document.getElementById('systemProxy');
+					if (checkbox.checked !== sysEnabled) {
+						checkbox.checked = sysEnabled;
+					}
+				} catch (_) { }
+			}, 1000);
+		});
+
+		dom.startBtn.onclick = async () => {
+			try {
+				await invoke('start_proxy', { config: getCurrentFormData() });
+				updateUI(true);
+				showToast("启动成功");
+			} catch (e) { showToast(e, true); }
+		};
+
+		dom.stopBtn.onclick = async () => {
+			try {
+				await invoke('stop_proxy');
+				updateUI(false);
+
+				// 停止代理后同步系统代理开关状态（后端已自动禁用）
+				document.getElementById('systemProxy').checked = false;
+				showToast("代理已停止");
+			} catch (e) { showToast(e, true); }
+		};
+
+		let lastOutputLength = 0;
+		setInterval(async () => {
+			if (isRunning) {
+				try {
+					const lines = await invoke('get_proxy_output');
+					// 只有当有新日志时才更新
+					if (lines.length > lastOutputLength) {
+						const newLines = lines.slice(lastOutputLength);
+						newLines.forEach(line => {
+							const div = document.createElement('div');
+							if (line.includes('ERR')) div.className = 'stderr';
+							div.textContent = line;
+							dom.output.appendChild(div);
+						});
+						dom.output.scrollTop = dom.output.scrollHeight;
+						lastOutputLength = lines.length;
+					}
+				} catch (e) {
+					console.error('获取日志失败:', e);
+				}
+			}
+		}, 1000);
+	</script>
+</body>
+
+</html>
