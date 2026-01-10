@@ -1,10 +1,4 @@
-client/dist
-client/build
-client/venv
-.vscode/
-
-client-gui-go/test
-client-gui-go/tools
+.vscode
 
 # Logs
 
