@@ -1,6 +1,6 @@
-## ech-worker
+## ech-workers
 
-这是一个CF WebSocket隧道代理，包括ech workers服务端和ech client客户端。
+这是一个 CFWorkers 代理的服务端部署代码。
 
 ##### 其它分支有 Durable Object 版本
 
@@ -28,3 +28,4 @@ npx wrangler dev
 npx wrangler deploy
 ```
 
+对应的客户端源码要看其它分支。
